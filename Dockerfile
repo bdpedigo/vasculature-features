@@ -26,5 +26,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
 ENV RUN_JOBS='True'
+ENV TEST_RUN='False'
 
 CMD ["uv", "run", "runners/segclr_on_2024-08-19.py"]

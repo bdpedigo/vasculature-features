@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: vasculature-features
+  name: vasculature-features
+spec:
+  replicas: 4 # number of pods to run
+  selector:
+    matchLabels:
+      run: vasculature-features
+  strategy:
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 10
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        run: vasculature-features # metadata label attached to pod
+    spec:
+      containers:
+        - image: bdpedigo/vasculature-features:v3 # image to pull from dockerhub
+          name: vasculature-features # name of container in pod
+          imagePullPolicy: Always
+          command: ["/bin/sh"]
+          args: ["-c", "while true; do uv run runners/segclr_on_2024-08-19.py; done"]
+          env:
+            - name: CLOUDSDK_CORE_PROJECT
+              value: ${CLOUDSDK_CORE_PROJECT}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/root/.cloudvolume/secrets/google-secret.json" #TODO
+          resources:
+            requests:
+              memory: 8.0Gi
+              cpu: 1600m
+            limits:
+              memory: 15.0Gi
+              cpu: 3500m
+          volumeMounts:
+            - name: secrets-volume
+              mountPath: /root/.cloudvolume/secrets
+      dnsPolicy: Default
+      volumes:
+        - name: secrets-volume
+          secret:
+            secretName: secrets

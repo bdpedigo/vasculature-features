@@ -1,22 +1,49 @@
 # %%
 
-import os
+import json
 import time
 from functools import partial
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import requests
 import seaborn as sns
 from caveclient import CAVEclient
 from cloudfiles import CloudFiles
 from nglui import statebuilder
 from nglui.segmentprops import SegmentProperties
 from sklearn.neighbors import NearestNeighbors
-from taskqueue import TaskQueue
+from taskqueue import TaskQueue, queueable
 
 from minniemorpho.models import load_model
 from minniemorpho.query import Level2Query, SegCLRQuery
+
+# %%
+
+url_path = Path("~/.cloudvolume/secrets")
+url_path = url_path / "discord-secret.json"
+
+with open(url_path.expanduser(), "r") as f:
+    URL = json.load(f)["url"]
+
+
+# TEST = bool(os.environ.get("TEST_RUN", True))
+# RUN = bool(os.environ.get("RUN_JOBS", False))
+TEST = False
+RUN = False
+REQUEST = True
+N_JOBS = -1
+
+msg = f"Connected to script {__file__}\n"
+msg += f"TEST: {TEST}\n"
+msg += f"RUN: {RUN}\n"
+msg += f"REQUEST: {REQUEST}\n"
+
+requests.post(URL, json={"content": msg})
+
+# %%
 
 
 def write_dataframe(df, cf, path):
@@ -208,7 +235,9 @@ def generate_link(level2_features, box_info):
         target_site="mainline",
         client=client,
     )
-    return sb.render_state(return_as="html")
+    out_link = sb.render_state(return_as="short")
+
+    return requests.post(URL, json={"content": out_link})
 
 
 client = CAVEclient("minnie65_public", version=1078)
@@ -229,11 +258,10 @@ seg_res = np.array(client.chunkedgraph.segmentation_info["scales"][0]["resolutio
 model = load_model("segclr_logreg_bdp")
 classes = model.classes_
 
-distance_threshold = 2_000
-
-test = True
+distance_threshold = 5_000
 
 
+@queueable
 def extract_features_for_box(box_id):
     box_info = box_params.loc[box_id]
     box_name = box_info["BranchTypeName"]
@@ -244,15 +272,18 @@ def extract_features_for_box(box_id):
 
     sub_target_df = targets[targets["box_id"] == box_id]
     query_ids = sub_target_df.index
-    if test:
-        query_ids = query_ids[:100]
+    if TEST:
+        query_ids = query_ids[:50]
+
+    msg = f"Working on box_id: {box_id} with {len(query_ids)} targets"
+    requests.post(URL, json={"content": msg})
 
     currtime = time.time()
 
     segclr_query = SegCLRQuery(
         client,
         verbose=True,
-        n_jobs=8,
+        n_jobs=N_JOBS,
         continue_on_error=True,
         version=943,
         components=64,
@@ -266,7 +297,7 @@ def extract_features_for_box(box_id):
     level2_query = Level2Query(
         client,
         verbose=True,
-        n_jobs=8,
+        n_jobs=N_JOBS,
         continue_on_error=True,
         attributes=["rep_coord_nm", "size_nm3", "area_nm2"],
     )
@@ -344,10 +375,20 @@ def extract_features_for_box(box_id):
 
     write_dataframe(level2_features, out_cf, f"{box_name}_level2_features.csv.gz")
 
-    return 1
+    msg = f"Finished box_id: {box_id}"
+    requests.post(URL, json={"content": msg})
+
+    return generate_link(level2_features, box_info)
 
 
-tq = TaskQueue("https://sqs.us-west-2.amazonaws.com/629034007606/ben-skedit-dead")
+if TEST and not REQUEST:
+    response = extract_features_for_box(0)
+    print(response)
+
+# %%
+
+
+tq = TaskQueue("https://sqs.us-west-2.amazonaws.com/629034007606/ben-skedit")
 
 
 def stop_fn(elapsed_time):
@@ -357,17 +398,17 @@ def stop_fn(elapsed_time):
 
 lease_seconds = 3 * 3600
 
-run = bool(os.environ.get("RUN_JOBS", False))
-if run:
+if RUN:
     tq.poll(lease_seconds=lease_seconds, verbose=False, tally=False)
 
 
 # %%
 
-request = True
-if request:
+if REQUEST:
     tasks = (
         partial(extract_features_for_box, box_id) for box_id in box_params.index.values
     )
-
+    # tq.purge()
     tq.insert(tasks)
+
+# %%
