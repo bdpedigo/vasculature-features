@@ -20,23 +20,25 @@ spec:
         run: vasculature-features # metadata label attached to pod
     spec:
       containers:
-        - image: bdpedigo/vasculature-features:v3 # image to pull from dockerhub
+        - image: bdpedigo/vasculature-features:v6 # image to pull from dockerhub
           name: vasculature-features # name of container in pod
           imagePullPolicy: Always
           command: ["/bin/sh"]
-          args: ["-c", "while true; do uv run runners/segclr_on_2024-08-19.py; done"]
+          args: ["-c", "while true; do uv run runners/segclr_on_2025-10-23.py; done"]
           env:
             - name: CLOUDSDK_CORE_PROJECT
               value: ${CLOUDSDK_CORE_PROJECT}
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/root/.cloudvolume/secrets/google-secret.json" #TODO
+            - name: TIMEOUT_HOURS
+              value: "3"
           resources:
             requests:
               memory: 8.0Gi
               cpu: 1600m
             limits:
-              memory: 15.0Gi
-              cpu: 3500m
+              memory: 30.0Gi
+              cpu: 3600m
           volumeMounts:
             - name: secrets-volume
               mountPath: /root/.cloudvolume/secrets

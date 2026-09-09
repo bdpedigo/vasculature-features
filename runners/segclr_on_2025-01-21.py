@@ -1,6 +1,7 @@
 # %%
 
 import json
+import os
 import time
 from functools import partial
 from io import BytesIO
@@ -20,6 +21,9 @@ from taskqueue import TaskQueue, queueable
 from minniemorpho.models import load_model
 from minniemorpho.query import Level2Query, SegCLRQuery
 
+OLD_DATE = "2024-08-19"
+DATE = "2025-01-21"
+
 # %%
 
 url_path = Path("~/.cloudvolume/secrets")
@@ -33,8 +37,9 @@ with open(url_path.expanduser(), "r") as f:
 # RUN = bool(os.environ.get("RUN_JOBS", False))
 TEST = False
 RUN = False
-REQUEST = True
+REQUEST = False
 N_JOBS = -1
+TIMEOUT_HOURS = float(os.environ.get("TIMEOUT_HOURS", 6))
 
 msg = f"Connected to script {__file__}\n"
 msg += f"TEST: {TEST}\n"
@@ -244,14 +249,12 @@ client = CAVEclient("minnie65_public", version=1078)
 
 cf = CloudFiles("gs://allen-minnie-phase3/vasculature_feature_pulls/box_info/")
 
-targets = load_dataframe(cf, "targets_2024-08-19.csv.gz", index_col=0)
+targets = load_dataframe(cf, f"targets_{DATE}.csv.gz", index_col=0)
 
-box_params = load_dataframe(cf, "box_params_2024-08-19.csv.gz", index_col=0)
+box_params = load_dataframe(cf, f"box_params_{DATE}.csv.gz", index_col=0)
 
 # %%
-out_cf = CloudFiles(
-    "gs://allen-minnie-phase3/vasculature_feature_pulls/segclr/2024-08-19"
-)
+out_cf = CloudFiles(f"gs://allen-minnie-phase3/vasculature_feature_pulls/segclr/{DATE}")
 
 seg_res = np.array(client.chunkedgraph.segmentation_info["scales"][0]["resolution"])
 
@@ -259,6 +262,8 @@ model = load_model("segclr_logreg_bdp")
 classes = model.classes_
 
 distance_threshold = 5_000
+
+TEST = False
 
 
 @queueable
@@ -317,6 +322,12 @@ def extract_features_for_box(box_id):
 
     print(f"{time.time() - currtime:.3f} seconds elapsed.")
     print()
+
+    # redo this because some roots may have not been found
+    # mainly the issue here is the chunkedgraph v2 bug
+    found_ids = root_features.index
+
+    segclr_features = segclr_features.loc[found_ids]  # drop anything w/o L2
 
     mappings = []
     for root_id in found_ids:
@@ -381,38 +392,43 @@ def extract_features_for_box(box_id):
     return generate_link(level2_features, box_info)
 
 
-if TEST and not REQUEST:
-    response = extract_features_for_box(0)
-    print(response)
+# if TEST and not REQUEST:
+#     response = extract_features_for_box(0)
+#     print(response)
 
 # %%
 
 boxes_done = []
-files = list(out_cf.list())
+old_out_cf = CloudFiles(
+    f"gs://allen-minnie-phase3/vasculature_feature_pulls/segclr/{OLD_DATE}"
+)
+files = list(old_out_cf.list())
+files += list(out_cf.list())
+box_params = box_params.reset_index().set_index("BranchTypeName")
+
 for file in files:
     file_name = file.replace("_segclr_features.csv.gz", "").replace(
         "_level2_features.csv.gz", ""
     )
-    box_id = (
-        box_params.reset_index().set_index("BranchTypeName").loc[file_name]["box_id"]
-    )
-    boxes_done.append(box_id)
+    # box_id = (
+    #     box_params.reset_index().set_index("BranchTypeName").loc[file_name]["box_id"]
+    # )
+    boxes_done.append(file_name)
 
-box_ids = box_params.index.difference(boxes_done)
-box_ids
+box_names = box_params.index.difference(boxes_done)
+box_ids = box_params.loc[box_names, "box_id"]
+print(box_ids)
+quit()
+
+box_params = box_params.reset_index().set_index("box_id")
 
 # %%
 
 tq = TaskQueue("https://sqs.us-west-2.amazonaws.com/629034007606/ben-skedit")
 
+lease_seconds = TIMEOUT_HOURS * 3600
 
-def stop_fn(elapsed_time):
-    if elapsed_time > 3600 * 3:
-        return True
-
-
-lease_seconds = 3 * 3600
-
+# %%
 if RUN:
     tq.poll(lease_seconds=lease_seconds, verbose=False, tally=False)
 
@@ -421,3 +437,7 @@ if RUN:
 if REQUEST:
     tasks = [partial(extract_features_for_box, box_id) for box_id in box_ids]
     tq.insert(tasks)
+
+# %%
+for box_id in box_ids:
+    extract_features_for_box(box_id)

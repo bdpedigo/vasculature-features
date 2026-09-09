@@ -10,10 +10,16 @@ dependencies = [
 description = "Add your description here"
 name = "vasculature-features"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10,<3.13"
 version = "0.1.0"
 
 [tool.uv.sources]
-minniemorpho = { git = "https://github.com/bdpedigo/minniemorpho", rev = "2e922c0" }
+minniemorpho = { git = "https://github.com/bdpedigo/minniemorpho", rev = "9a055ab" }
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "ipython>=8.18.1",
+]
 
 # [tool.hatch.build.targets.wheel.sources]
