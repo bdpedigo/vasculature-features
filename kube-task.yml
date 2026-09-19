@@ -20,11 +20,11 @@ spec:
         run: vasculature-features # metadata label attached to pod
     spec:
       containers:
-        - image: bdpedigo/vasculature-features:v6 # image to pull from dockerhub
+        - image: bdpedigo/vasculature-features:v7 # image to pull from dockerhub
           name: vasculature-features # name of container in pod
           imagePullPolicy: Always
           command: ["/bin/sh"]
-          args: ["-c", "while true; do uv run runners/segclr_on_2025-10-23.py; done"]
+          args: ["-c", "while true; do uv run runners/segclr_on_2026-09-09.py; done"]
           env:
             - name: CLOUDSDK_CORE_PROJECT
               value: ${CLOUDSDK_CORE_PROJECT}

@@ -1,5 +1,6 @@
 # comment
-gcloud config set project exalted-beanbag-334502
+gcloud config set project em-270621
+gcloud auth application-default set-quota-project em-270621
 
 # machine-type
 # to see list of machines, do:
@@ -15,7 +16,7 @@ gcloud config set project exalted-beanbag-334502
 
 # num-nodes: The number of nodes to be created in each of the cluster's zones.
 
-gcloud container --project "exalted-beanbag-334502" clusters create "vasculature-features" \
+gcloud container --project "em-270621" clusters create "vasculature-features" \
     --zone "us-east4-b" \
     --no-enable-basic-auth \
     --release-channel "stable" \
@@ -26,12 +27,10 @@ gcloud container --project "exalted-beanbag-334502" clusters create "vasculature
     --metadata disable-legacy-endpoints=true \
     --scopes "https://www.googleapis.com/auth/devstorage.read_only","https://www.googleapis.com/auth/logging.write","https://www.googleapis.com/auth/monitoring","https://www.googleapis.com/auth/servicecontrol","https://www.googleapis.com/auth/service.management.readonly","https://www.googleapis.com/auth/trace.append" \
     --preemptible \
-    --num-nodes "1" \
+    --num-nodes "2" \
     --logging=SYSTEM,WORKLOAD \
     --monitoring=SYSTEM \
     --enable-ip-alias \
-    --network "projects/exalted-beanbag-334502/global/networks/patchseq" \
-    --subnetwork "projects/exalted-beanbag-334502/regions/us-east4/subnetworks/patchseq" \
     --no-enable-intra-node-visibility \
     --default-max-pods-per-node "100" \
     --no-enable-master-authorized-networks \
@@ -41,6 +40,8 @@ gcloud container --project "exalted-beanbag-334502" clusters create "vasculature
     --max-surge-upgrade 3 \
     --max-unavailable-upgrade 0 \
     --enable-shielded-nodes \
+    --shielded-secure-boot \
+    --shielded-integrity-monitoring \
     --node-locations "us-east4-b"
 
 gcloud container clusters get-credentials --zone us-east4-b vasculature-features
