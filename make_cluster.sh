@@ -1,6 +1,6 @@
 # comment
 gcloud config set project em-270621
-gcloud auth application-default set-quota-project em-270621
+# gcloud auth application-default set-quota-project em-270621
 
 # machine-type
 # to see list of machines, do:

@@ -5,7 +5,7 @@ metadata:
     run: vasculature-features
   name: vasculature-features
 spec:
-  replicas: 4 # number of pods to run
+  replicas: 0 # number of pods to run
   selector:
     matchLabels:
       run: vasculature-features
@@ -42,8 +42,15 @@ spec:
           volumeMounts:
             - name: secrets-volume
               mountPath: /root/.cloudvolume/secrets
+            # Hotfix overlay: replaces only the runner script from a ConfigMap.
+            - name: runner-code
+              mountPath: /app/runners/segclr_on_2026-09-09.py
+              subPath: segclr_on_2026-09-09.py
       dnsPolicy: Default
       volumes:
         - name: secrets-volume
           secret:
             secretName: secrets
+        - name: runner-code
+          configMap:
+            name: segclr-runner

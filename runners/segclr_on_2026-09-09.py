@@ -36,16 +36,14 @@ with open(url_path.expanduser(), "r") as f:
 
 TEST = bool(os.environ.get("TEST_RUN", False))
 RUN = bool(os.environ.get("RUN_JOBS", True))
-TEST = True
-RUN = False
-REQUEST = True
-N_JOBS = -1
+N_JOBS = int(os.environ.get("N_JOBS", -1))
 TIMEOUT_HOURS = float(os.environ.get("TIMEOUT_HOURS", 3))
 
 msg = f"Connected to script {__file__}\n"
 msg += f"TEST: {TEST}\n"
 msg += f"RUN: {RUN}\n"
-msg += f"REQUEST: {REQUEST}\n"
+msg += f"N_JOBS: {N_JOBS}\n"
+msg += f"TIMEOUT_HOURS: {TIMEOUT_HOURS}\n"
 
 requests.post(URL, json={"content": msg})
 
@@ -263,8 +261,6 @@ model = load_model("segclr_logreg_bdp")
 classes = model.classes_
 
 distance_threshold = 5_000
-
-TEST = False
 
 
 @queueable
