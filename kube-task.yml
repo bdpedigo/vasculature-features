@@ -5,7 +5,7 @@ metadata:
     run: vasculature-features
   name: vasculature-features
 spec:
-  replicas: 0 # number of pods to run
+  replicas: 8 # number of pods to run
   selector:
     matchLabels:
       run: vasculature-features
@@ -19,26 +19,35 @@ spec:
       labels:
         run: vasculature-features # metadata label attached to pod
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              run: vasculature-features
       containers:
-        - image: bdpedigo/vasculature-features:v7 # image to pull from dockerhub
+        - image: bdpedigo/vasculature-features:v11 # image to pull from dockerhub
           name: vasculature-features # name of container in pod
           imagePullPolicy: Always
           command: ["/bin/sh"]
-          args: ["-c", "while true; do uv run runners/segclr_on_2026-09-09.py; done"]
+          args: ["-c", "while true; do uv run --frozen runners/segclr_on_2026-09-09.py; sleep 30; done"]
           env:
             - name: CLOUDSDK_CORE_PROJECT
               value: ${CLOUDSDK_CORE_PROJECT}
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/root/.cloudvolume/secrets/google-secret.json" #TODO
             - name: TIMEOUT_HOURS
-              value: "3"
+              value: "6"
+            - name: N_JOBS
+              value: "16" # threads for I/O-bound requests; threading backend means this no longer multiplies memory per worker
           resources:
             requests:
-              memory: 8.0Gi
-              cpu: 1600m
+              memory: 6.0Gi
+              cpu: 1800m
             limits:
-              memory: 30.0Gi
-              cpu: 3600m
+              memory: 32.0Gi
+              cpu: 3900m
           volumeMounts:
             - name: secrets-volume
               mountPath: /root/.cloudvolume/secrets

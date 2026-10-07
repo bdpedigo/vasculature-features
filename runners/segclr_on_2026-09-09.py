@@ -34,13 +34,11 @@ with open(url_path.expanduser(), "r") as f:
     URL = json.load(f)["url"]
 
 
-TEST = bool(os.environ.get("TEST_RUN", False))
-RUN = bool(os.environ.get("RUN_JOBS", True))
+RUN = bool(os.environ.get("RUN_JOBS", "True") == "True")
 N_JOBS = int(os.environ.get("N_JOBS", -1))
 TIMEOUT_HOURS = float(os.environ.get("TIMEOUT_HOURS", 3))
 
 msg = f"Connected to script {__file__}\n"
-msg += f"TEST: {TEST}\n"
 msg += f"RUN: {RUN}\n"
 msg += f"N_JOBS: {N_JOBS}\n"
 msg += f"TIMEOUT_HOURS: {TIMEOUT_HOURS}\n"
@@ -53,7 +51,7 @@ requests.post(URL, json={"content": msg})
 def write_dataframe(df, cf, path):
     with BytesIO() as f:
         df.to_csv(f, index=True)
-        cf.put(path, f)
+        cf.put(path, f.getvalue())
 
 
 def load_dataframe(cf, path, **kwargs):
@@ -274,8 +272,6 @@ def extract_features_for_box(box_id):
 
     sub_target_df = targets[targets["box_id"] == box_id]
     query_ids = sub_target_df.index
-    if TEST:
-        query_ids = query_ids[:50]
 
     msg = f"Working on box_id: {box_id} with {len(query_ids)} targets"
     requests.post(URL, json={"content": msg})
@@ -361,7 +357,7 @@ def extract_features_for_box(box_id):
     predictions = predictions.join(posteriors)
     segclr_features = segclr_features.join(predictions)
 
-    write_dataframe(segclr_features, out_cf, f"{box_name}_segclr_features.csv.gz")
+    write_dataframe(segclr_features, out_cf, f"{box_id}_{box_name}_segclr_features.csv.gz")
 
     filtered_segclr_features = segclr_features[
         segclr_features["distance_to_level2"] <= distance_threshold
@@ -381,7 +377,7 @@ def extract_features_for_box(box_id):
 
     level2_features = level2_features.join(level2_predictions)
 
-    write_dataframe(level2_features, out_cf, f"{box_name}_level2_features.csv.gz")
+    write_dataframe(level2_features, out_cf, f"{box_id}_{box_name}_level2_features.csv.gz")
 
     msg = f"Finished box_id: {box_id}"
     requests.post(URL, json={"content": msg})
@@ -401,7 +397,6 @@ old_out_cf = CloudFiles(
 )
 files = list(old_out_cf.list())
 files += list(out_cf.list())
-box_params = box_params.reset_index().set_index("BranchTypeName")
 
 for file in files:
     file_name = file.replace("_segclr_features.csv.gz", "").replace(
@@ -412,16 +407,21 @@ for file in files:
     # )
     boxes_done.append(file_name)
 
-box_names = box_params.index.difference(boxes_done)
-box_ids = box_params.loc[box_names, "box_id"]
-print(box_ids)
-# quit()
-
-box_params = box_params.reset_index().set_index("box_id")
+boxes_done = np.unique(boxes_done)
+print("Number of boxes done:", len(boxes_done))
+#%%
+box_params = box_params.reset_index()
+box_params['file_name'] = box_params['box_id'].astype(str) + "_" + box_params['BranchTypeName']
+# box_names = box_params.index.difference(boxes_done)
+remaining_box_params = box_params.query("file_name not in @boxes_done")
+box_ids = remaining_box_params["box_id"]
+print("Number of remaining boxes:", len(box_ids))
 
 # %%
 
-tq = TaskQueue("https://sqs.us-west-2.amazonaws.com/629034007606/ben-skedit")
+tq = TaskQueue(
+    "pubsub://projects/em-270621/topics/vasculature-features/subscriptions/vasculature-features-sub"
+)
 
 lease_seconds = TIMEOUT_HOURS * 3600
 
@@ -431,7 +431,7 @@ if RUN:
 
 # %%
 
-if REQUEST:
+if False:
     tasks = [partial(extract_features_for_box, box_id) for box_id in box_ids]
     tq.insert(tasks)
 

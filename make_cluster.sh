@@ -16,6 +16,18 @@ gcloud config set project em-270621
 
 # num-nodes: The number of nodes to be created in each of the cluster's zones.
 
+# create the pub/sub topic and subscription used for task queueing, if needed
+PUBSUB_TOPIC="vasculature-features"
+PUBSUB_SUBSCRIPTION="vasculature-features-sub"
+
+if ! gcloud pubsub topics describe "$PUBSUB_TOPIC" >/dev/null 2>&1; then
+    gcloud pubsub topics create "$PUBSUB_TOPIC"
+fi
+
+if ! gcloud pubsub subscriptions describe "$PUBSUB_SUBSCRIPTION" >/dev/null 2>&1; then
+    gcloud pubsub subscriptions create "$PUBSUB_SUBSCRIPTION" --topic "$PUBSUB_TOPIC"
+fi
+
 gcloud container --project "em-270621" clusters create "vasculature-features" \
     --zone "us-east4-b" \
     --no-enable-basic-auth \
@@ -52,4 +64,11 @@ kubectl create secret generic secrets \
     --from-file=$HOME/.cloudvolume/secrets/global.daf-apis.com-cave-secret.json \
     --from-file=$HOME/.cloudvolume/secrets/aws-secret.json \
     --from-file=$HOME/.cloudvolume/secrets/google-secret.json \
-    --from-file=$HOME/.cloudvolume/secrets/discord-secret.json \
+    --from-file=$HOME/.cloudvolume/secrets/discord-secret.json
+
+# hotfix overlay ConfigMap (see README) so the runner script can be patched without a rebuild
+kubectl create configmap segclr-runner \
+    --from-file=segclr_on_2026-09-09.py=runners/segclr_on_2026-09-09.py \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f kube-task.yml

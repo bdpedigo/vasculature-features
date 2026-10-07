@@ -20,6 +20,9 @@ Monitor the cluster:
 Watch the logs in real-time:
 `kubectl logs -f <pod-name>`
 
+Clear the pub/sub task queue (acks/discards the entire backlog — scale the deployment to 0 replicas first to avoid racing with running pollers):
+`gcloud pubsub subscriptions seek vasculature-features-sub --project em-270621 --time=$(date -u +%Y-%m-%dT%H:%M:%SZ)`
+
 ## Hotfixing the runner without rebuilding the image
 
 The runner script is baked into the image (`ADD . /app`), but `kube-task.yml` mounts a ConfigMap overlay on top of `runners/segclr_on_2026-09-09.py` so you can patch that one file without a rebuild/push. To apply a change:
