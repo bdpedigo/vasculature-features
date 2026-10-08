@@ -253,6 +253,12 @@ box_params = load_dataframe(cf, f"box_params_{DATE}.csv.gz", index_col=0)
 # %%
 out_cf = CloudFiles(f"gs://allen-minnie-phase3/vasculature_feature_pulls/segclr/{DATE}")
 
+# a marker per box that has started but not finished; deleted on success
+status_cf = CloudFiles(
+    f"gs://allen-minnie-phase3/vasculature_feature_pulls/segclr_status/{DATE}"
+)
+POD = os.environ.get("HOSTNAME", "local")
+
 seg_res = np.array(client.chunkedgraph.segmentation_info["scales"][0]["resolution"])
 
 model = load_model("segclr_logreg_bdp")
@@ -261,8 +267,45 @@ classes = model.classes_
 distance_threshold = 5_000
 
 
+def report_dead_boxes():
+    # this pod runs one box at a time, so its own unfinished markers are from a killed run
+    for name in status_cf.list():
+        status = status_cf.get_json(name)
+        if status["pod"] == POD and "error" not in status:
+            status["error"] = "process killed mid-box (likely OOMKilled)"
+            status_cf.put_json(name, status)
+            msg = f"FAILED {name} on {POD}: {status['error']}. Not requeued."
+            requests.post(URL, json={"content": msg})
+
+
 @queueable
 def extract_features_for_box(box_id):
+    file_name = f"{box_id}_{box_params.loc[box_id]['BranchTypeName']}"
+    if out_cf.exists(f"{file_name}_level2_features.csv.gz"):
+        msg = f"Skipping box_id: {box_id}, output already exists"
+        requests.post(URL, json={"content": msg})
+        return
+    # delete the marker to deliberately retry a failed box
+    if status_cf.exists(f"{file_name}.json"):
+        msg = f"Skipping box_id: {box_id}, already failed or in progress"
+        requests.post(URL, json={"content": msg})
+        return
+
+    status = {"pod": POD, "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    status_cf.put_json(f"{file_name}.json", status)
+    try:
+        response = _extract_features_for_box(box_id)
+    except Exception as e:
+        status["error"] = repr(e)[:1500]
+        status_cf.put_json(f"{file_name}.json", status)
+        msg = f"FAILED {file_name} on {POD}: {status['error']}. Not requeued."
+        requests.post(URL, json={"content": msg})
+        raise
+    status_cf.delete(f"{file_name}.json")
+    return response
+
+
+def _extract_features_for_box(box_id):
     box_info = box_params.loc[box_id]
     box_name = box_info["BranchTypeName"]
     bounds_min_cg = (box_info[["x_min", "y_min", "z_min"]].values / seg_res).astype(int)
@@ -413,7 +456,11 @@ print("Number of boxes done:", len(boxes_done))
 box_params = box_params.reset_index()
 box_params['file_name'] = box_params['box_id'].astype(str) + "_" + box_params['BranchTypeName']
 # box_names = box_params.index.difference(boxes_done)
-remaining_box_params = box_params.query("file_name not in @boxes_done")
+boxes_failed = [name.removesuffix(".json") for name in status_cf.list()]
+print("Number of boxes failed or in progress:", len(boxes_failed))
+remaining_box_params = box_params.query(
+    "file_name not in @boxes_done and file_name not in @boxes_failed"
+)
 box_ids = remaining_box_params["box_id"]
 print("Number of remaining boxes:", len(box_ids))
 
@@ -427,7 +474,16 @@ lease_seconds = TIMEOUT_HOURS * 3600
 
 # %%
 if RUN:
-    tq.poll(lease_seconds=lease_seconds, verbose=False, tally=False)
+    report_dead_boxes()
+    # ack on receipt (at-most-once): the taskqueue pubsub backend ignores
+    # lease_seconds, so an unacked box is redelivered to other pods after ~10s
+    tq.poll(
+        lease_seconds=lease_seconds,
+        verbose=False,
+        tally=False,
+        before_fn=tq.delete,
+        stop_fn=lambda executed: executed >= 1,
+    )
 
 # %%
 

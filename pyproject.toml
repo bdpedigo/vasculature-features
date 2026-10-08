@@ -15,7 +15,7 @@ requires-python = ">=3.10,<3.13"
 version = "0.1.0"
 
 [tool.uv.sources]
-minniemorpho = { git = "https://github.com/bdpedigo/minniemorpho", rev = "7c5bbf7" }
+minniemorpho = { git = "https://github.com/bdpedigo/minniemorpho", rev = "ff8f073" }
 
 [dependency-groups]
 dev = [
